@@ -1,53 +1,47 @@
 #!/usr/bin/env python3
-"""A module that tracks the live of caches"""
-import requests
-import redis
+"""
+In this tasks, we will implement a get_page function
+(prototype: def get_page(url: str) -> str:).
+The core of the function is very simple.
+It uses the requests module to obtain
+the HTML content of a particular URL and returns it.
+
+Inside get_page track how many times a particular URL was
+accessed in the key "count:{url}" and cache the
+result with an expiration time of 10 seconds.
+
+Tip: Use http://slowwly.robertomurray.co.uk to
+simulate a slow response and test your caching.
+
+Bonus: implement this use case with decorators.
+"""
 from functools import wraps
-from typing import Callable
+import requests as req
+import redis
 
 
-def count_access(method: Callable) -> Callable:
-    """A function that checks and update the cache time"""
+redis_cache = redis.Redis()
+
+
+def count_url_access(method):
+    """counts the no of times a url is accessed"""
     @wraps(method)
-    def wrapper(*args, **kwargs) -> str:
-        """updates cache time"""
-        url: str = arg[0]
-        count_key: str = f"count:{url}"
-        cache_key: str = f"cache:{url}"
+    def count(url):
+        url_key = url
+        cached_data = redis_cache.get(url_key)
+        if cached_data:
+            return cached_data.decode("utf-8")
 
-        access_count: int = redis_client.incr(count_key)
-
-        print(f"Access count for {url}: {access_count}")
-        cached_result: bytes = redis_client.get(cache_key)
-        if cached_result:
-            return cached_result.decode("utf-8")
-
-        result: str = method(*args, **kwargs)
-        redis_client.set(count_key, 0)
-        redis_client.setex(cache_key, 10, result)
-
-        return result
-    return wrapper
+        count_key = 'count:{}'.format(url)
+        html = method(url)
+        redis_cache.incr(count_key)
+        redis_cache.setex(url_key, 10, html)
+        return html
+    return count
 
 
-@count_access
+@count_url_access
 def get_page(url: str) -> str:
-    """ A function that send http request to the supplied url"""
-    response = requests.get(url)
-    return response.text
-
-
-if __name__ == "__main__":
-    redis_client: redis.Redis = redis.Redis()
-    slow_url: str = ("http://slowwly.robertomurray.co.uk"
-                     "/delay/1000/url/https://www.example.com")
-    print(get_page(slow_url))
-    print(get_page(slow_url))
-
-    fast_url: str = ("https://github.com/Roo-rabab/alx-backend-storage/"
-                    "blob/master/0x02-redis_basic/exercise.py")
-    print(get_page(fast_url))
-
-    import time
-    time.sleep(11)
-    print(get_page(slow_url))
+    """requests a url and returns the HTML content"""
+    html = req.get(url)
+    return html.text
