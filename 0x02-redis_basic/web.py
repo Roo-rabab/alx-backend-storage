@@ -1,47 +1,42 @@
 #!/usr/bin/env python3
-"""
-In this tasks, we will implement a get_page function
-(prototype: def get_page(url: str) -> str:).
-The core of the function is very simple.
-It uses the requests module to obtain
-the HTML content of a particular URL and returns it.
-
-Inside get_page track how many times a particular URL was
-accessed in the key "count:{url}" and cache the
-result with an expiration time of 10 seconds.
-
-Tip: Use http://slowwly.robertomurray.co.uk to
-simulate a slow response and test your caching.
-
-Bonus: implement this use case with decorators.
-"""
-from functools import wraps
-import requests as req
+'''A module with tools for expiring request caching and tracking.
+'''
 import redis
+import requests
+from functools import wraps
+from typing import Callable
 
+redis_store = redis.Redis()
+'''The module-level Redis instance.
+'''
 
-redis_cache = redis.Redis()
-
-
-def count_url_access(method):
-    """counts the no of times a url is accessed"""
+def expiring_data_cacher(method: Callable) -> Callable:
+    '''Caches the output of fetched data with expiration.
+    '''
     @wraps(method)
-    def count(url):
-        url_key = url
-        cached_data = redis_cache.get(url_key)
-        if cached_data:
-            return cached_data.decode("utf-8")
+    def invoker(url) -> str:
+        '''The wrapper function for caching the output with expiration.
+        '''
+        redis_store.incr(f'count:{url}')
+        result = redis_store.get(f'result:{url}')
+        if result:
+            return result.decode('utf-8')
+        result = method(url)
+        redis_store.set(f'count:{url}', 0)
+        redis_store.setex(f'result:{url}', 10, result)
+        return result
+    return invoker
 
-        count_key = 'count:{}'.format(url)
-        html = method(url)
-        redis_cache.incr(count_key)
-        redis_cache.setex(url_key, 10, html)
-        return html
-    return count
-
-
-@count_url_access
 def get_page(url: str) -> str:
-    """requests a url and returns the HTML content"""
-    html = req.get(url)
-    return html.text
+    '''Returns the content of a URL after caching the request's response,
+    tracking the request, and using an expiration time.
+    '''
+    return requests.get(url).text
+
+# Decorate the get_page function with the expiring_data_cacher decorator
+get_page = expiring_data_cacher(get_page)
+
+# Test the decorated function
+if __name__ == "__main__":
+    slow_url = "http://slowwly.robertomurray.co.uk/delay/5000/url/http://www.example.com"
+    print(get_page(slow_url))
